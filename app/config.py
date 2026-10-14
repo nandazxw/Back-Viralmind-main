@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     jwt_secret: str = "viral-mind-dev-secret-change-this"
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60 * 24
-    groq_api_key: str = "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"
+    groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
 
     model_config = SettingsConfigDict(
