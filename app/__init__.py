@@ -1,1 +1,1 @@
-from .routers import auth, chat, users, schedule
+from .routers import auth, chat, users, schedule, trends

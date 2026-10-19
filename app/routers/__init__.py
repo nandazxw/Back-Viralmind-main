@@ -1,1 +1,1 @@
-from . import auth, chat, users
+from . import auth, chat, users, schedule, trends

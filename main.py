@@ -7,7 +7,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from app.config import settings
 from app.database import Base, engine, SessionLocal
 from app import models
-from app.routers import auth, chat, users, schedule
+from app.routers import auth, chat, users, schedule, trends
 from app.dependencies import get_current_user
 from app.schemas import UserResponse
 
@@ -73,6 +73,9 @@ app.include_router(chat.router, prefix="/api/chat", tags=["Chat IA"])
 
 app.include_router(schedule.router, prefix="/schedule", tags=["Agendamento"])
 app.include_router(schedule.router, prefix="/api/schedule", tags=["Agendamento"])
+
+app.include_router(trends.router, prefix="/trends", tags=["Trends"])
+app.include_router(trends.router, prefix="/api/trends", tags=["Trends"])
 
 
 @app.get("/")
