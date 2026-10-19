@@ -37,27 +37,46 @@ async def ask_groq(message: str, previous_messages: list[dict] | None = None) ->
 
     messages_payload.append({"role": "user", "content": message})
 
-    try:
-        client = Groq(api_key=settings.groq_api_key)
-        completion = client.chat.completions.create(
-            model=settings.groq_model,
-            messages=messages_payload,
-            temperature=0.8,
-            max_completion_tokens=2048,
-            top_p=1,
-            stream=False,
-        )
+    client = Groq(api_key=settings.groq_api_key)
 
-        return completion.choices[0].message.content or ""
+    # Lista de modelos prioritários caso o modelo principal sofra rate limit (413/429)
+    models_to_try = [settings.groq_model]
+    for fallback_model in ["openai/gpt-oss-20b", "qwen/qwen3.8-27b"]:
+        if fallback_model not in models_to_try:
+            models_to_try.append(fallback_model)
 
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.error(f"Erro ao acessar a API do Groq: {exc}")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Serviço Groq com instabilidade ou falha: {exc}",
-        ) from exc
+    last_exception = None
+    for model_name in models_to_try:
+        try:
+            completion = client.chat.completions.create(
+                model=model_name,
+                messages=messages_payload,
+                temperature=0.8,
+                max_completion_tokens=1024,
+                top_p=1,
+                stream=False,
+            )
+            return completion.choices[0].message.content or ""
+        except Exception as exc:
+            last_exception = exc
+            error_msg = str(exc)
+            # Se for estouro de tokens ou rate limit, tenta o próximo modelo disponível
+            if "413" in error_msg or "rate_limit" in error_msg or "tokens" in error_msg:
+                logger.warning(
+                    f"Limite de tokens atingido para o modelo '{model_name}'. Tentando modelo alternativo... Erro: {exc}"
+                )
+                continue
+            logger.error(f"Erro ao acessar a API do Groq com {model_name}: {exc}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Serviço Groq com instabilidade ou falha: {exc}",
+            ) from exc
+
+    logger.error(f"Todos os modelos da Groq falharam por limite de tokens: {last_exception}")
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=f"Serviço Groq excedeu o limite de tokens da conta: {last_exception}",
+    )
 
 
 @router.post("/", response_model=ChatResponse)
@@ -68,17 +87,20 @@ async def chat(
 ):
     previous_messages = []
     if data.include_history:
-        # Busca as últimas 6 mensagens para manter a memória contínua do chat
+        # Busca as últimas 4 mensagens e limita caracteres para proteger o limite de TPM da Groq
         recent_chats = (
             db.query(ChatHistory)
             .filter(ChatHistory.user_id == user.id)
             .order_by(ChatHistory.created_at.desc())
-            .limit(6)
+            .limit(4)
             .all()
         )
         for ch in reversed(recent_chats):
-            previous_messages.append({"role": "user", "content": ch.message})
-            previous_messages.append({"role": "assistant", "content": ch.response})
+            # Limita a resposta histórica anterior a no máximo 1000 caracteres para não inflar o payload
+            user_msg = ch.message[:500] if len(ch.message) > 500 else ch.message
+            assistant_msg = ch.response[:1000] if len(ch.response) > 1000 else ch.response
+            previous_messages.append({"role": "user", "content": user_msg})
+            previous_messages.append({"role": "assistant", "content": assistant_msg})
 
     response = await ask_groq(data.message, previous_messages)
 
