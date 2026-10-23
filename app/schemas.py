@@ -14,6 +14,12 @@ class UserLogin(BaseModel):
     password: str
 
 
+class GoogleAuthRequest(BaseModel):
+    email: EmailStr
+    name: str | None = None
+    id_token: str | None = None
+
+
 class UserResponse(BaseModel):
     id: int
     name: str
@@ -91,4 +97,4 @@ class TrendItem(BaseModel):
 
 class TrendGenerateRequest(BaseModel):
     niche: str = Field(min_length=2, max_length=100)
-    count: int = Field(default=5, ge=1, le=10)
+    count: int = Field(default=5, ge=1, le=10)
