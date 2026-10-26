@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
-from fastapi import FastAPI, Depends
+import logging
+import time
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -10,6 +12,13 @@ from app import models
 from app.routers import auth, chat, users, schedule, trends
 from app.dependencies import get_current_user
 from app.schemas import UserResponse
+
+# Configuração global de Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger("viralmind")
 
 # 1. Cria as tabelas do banco automaticamente
 Base.metadata.create_all(bind=engine)
@@ -60,6 +69,25 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Middleware de log para todas as requisições HTTP recebidas
+@app.middleware("http")
+async def log_requests_middleware(request: Request, call_next):
+    start_time = time.time()
+    method = request.method
+    path = request.url.path
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info(f"➡️ [HTTP] {method} {path} de {client_ip}")
+
+    try:
+        response = await call_next(request)
+        elapsed = (time.time() - start_time) * 1000
+        logger.info(f"⬅️ [HTTP] {method} {path} finalizado - Status {response.status_code} ({elapsed:.1f}ms)")
+        return response
+    except Exception as exc:
+        elapsed = (time.time() - start_time) * 1000
+        logger.error(f"❌ [HTTP] {method} {path} falhou após {elapsed:.1f}ms: {exc}", exc_info=True)
+        raise exc
 
 # 5. Registro de Roteadores (Com suporte a chamadas com e sem o prefixo /api)
 app.include_router(auth.router, prefix="/auth", tags=["Autenticação"])
